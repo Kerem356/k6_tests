@@ -1,13 +1,11 @@
 # This is a basic workflow to help you get started with Actions
 
-name: CI
+name: Push docker container to Heroku!
 
 # Controls when the workflow will run
 on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ master ]
-  pull_request:
     branches: [ master ]
 
   # Allows you to run this workflow manually from the Actions tab
@@ -19,18 +17,59 @@ jobs:
   build:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
+    outputs:
+      output_port: ${{ steps.port.outputs.testport }}
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      # Runs command using the runners shell
+      - name: Login to Heroku Container registry
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: heroku container:login
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+      - name: Build and push
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: heroku container:push -a ${{ secrets.HEROKU_APP_NAME }} web
+
+      - name: Release
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: heroku container:release -a ${{ secrets.HEROKU_APP_NAME }} web
+
+      - name: Sleep
+        run: sleep 30
+
+      - id: port
+        name: Check port
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: echo ::set-output name=testport::$(heroku logs -n 3 -a k6-server-sampler |  grep -o 'Running on this port [0-9]\+' | sed -e 's/[^0-9]//g')
+
+      - name: Echo port heroku
+        run: echo "${{steps.port.outputs.testport}}"
+
+  loadtest:
+    name: k6 local test run
+    runs-on: ubuntu-latest
+    container: docker://loadimpact/k6:0.36.0
+    needs: [ build ]
+
+    steps:
+      - name: Echo port
+        run: echo "${{needs.build.outputs.output_port}}"
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Run k6 local test
+        uses: k6io/action@v0.1
+        with:
+          filename: script.ts
+        env:
+          HOST: ${{ secrets.HEROKU_APP_NAME }}.herokuapp.com
+          PORT: 443
