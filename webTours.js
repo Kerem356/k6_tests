@@ -1,9 +1,10 @@
 import { sleep, group } from 'k6'
 import http from 'k6/http'
 
+const HOST = 'http://www.load-test.ru:1080';
 export const options = {
-    vus: 1,
-    duration: '10s'
+    vu: 1,
+    duration: '5s'
 }
 
 export default function main() {
@@ -11,23 +12,29 @@ export default function main() {
 
     const vars = {}
 
-    group('page_1 - http://www.load-test.ru:1080/WebTours/index.htm', function () {
-        response = http.get('http://www.load-test.ru:1080/WebTours/header.html', {
+    group('WebTours Payment', function () {
+
+        //Open Home Page
+        response = http.get(`${HOST}/WebTours/home.html`, {
             headers: {
                 'upgrade-insecure-requests': '1',
             },
         })
 
-        response = http.get('http://www.load-test.ru:1080/WebTours/home.html', {
+        // Get User Session
+        response = http.get(`${HOST}/cgi-bin/nav.pl?in=home`, {
             headers: {
                 'upgrade-insecure-requests': '1',
             },
         })
 
+        let userSession = response.html().find("[name='userSession']").attr('value')
+
+        //Login
         response = http.post(
-            'http://www.load-test.ru:1080/cgi-bin/login.pl',
+            `${HOST}/cgi-bin/login.pl`,
             {
-                userSession: '133176.136168489zifActHpfAtVzzzHtVVAVptifAcf',
+                userSession: `${userSession}`,
                 username: 'k6test',
                 password: 'k6test',
                 'login.x': '73',
@@ -37,40 +44,48 @@ export default function main() {
             {
                 headers: {
                     'content-type': 'application/x-www-form-urlencoded',
-                    origin: 'http://www.load-test.ru:1080',
+                    origin: `${HOST}`,
                     'upgrade-insecure-requests': '1',
                 },
             }
         )
 
+        // Open flights
+        response = http.get(`${HOST}/cgi-bin/welcome.pl?page=search`)
+
+        // Get cities
+        response = http.get(`${HOST}//cgi-bin/reservations.pl?page=welcome`)
+        let cities = response.html().find("[name='depart']").children('option').map(function (idx, el) {
+            return el.text();
+        })
+
+        let city_depart = cities[Math.floor(Math.random() * cities.length)];
+        let city_arrive = cities[Math.floor(Math.random() * cities.length)];
+
+        // Choose flight
         response = http.post(
-            'http://www.load-test.ru:1080/cgi-bin/reservations.pl',
-            'advanceDiscount=0&depart=Frankfurt&departDate=02%2F06%2F2022&arrive=Los+Angeles&returnDate=02%2F07%2F2022&numPassengers=1&seatPref=None&seatType=Coach&findFlights.x=40&findFlights.y=3&.cgifields=roundtrip%2CseatType%2CseatPref',
+            `${HOST}/cgi-bin/reservations.pl`,
+            `advanceDiscount=0&depart=${city_depart}&departDate=02%2F06%2F2022&arrive=${city_arrive}&returnDate=02%2F07%2F2022&numPassengers=1&seatPref=None&seatType=Coach&findFlights.x=40&findFlights.y=3&.cgifields=roundtrip%2CseatType%2CseatPref`,
             {
                 headers: {
                     'content-type': 'application/x-www-form-urlencoded',
-                    origin: 'http://www.load-test.ru:1080',
+                    origin: `${HOST}`,
                     'upgrade-insecure-requests': '1',
                 },
             }
         )
 
-        vars['numPassengers1'] = response.html().find('input[name=numPassengers]').first().attr('value')
+        let outboundFlights = response.html().find("[name='outboundFlight']").map(function (idx, el) {
+            return el.attr("value");
+        });
 
-        vars['advanceDiscount1'] = response
-            .html()
-            .find('input[name=advanceDiscount]')
-            .first()
-            .attr('value')
+        let outboundFlight = outboundFlights[Math.floor(Math.random() * outboundFlights.length)];
 
-        vars['seatType1'] = response.html().find('input[name=seatType]').first().attr('value')
-
-        vars['seatPref1'] = response.html().find('input[name=seatPref]').first().attr('value')
-
+        // choose flight type
         response = http.post(
-            'http://www.load-test.ru:1080/cgi-bin/reservations.pl',
+            `${HOST}/cgi-bin/reservations.pl`,
             {
-                outboundFlight: '131;290;02/06/2022',
+                outboundFlight: outboundFlight,
                 numPassengers: `${vars['numPassengers1']}`,
                 advanceDiscount: `${vars['advanceDiscount1']}`,
                 seatType: `${vars['seatType1']}`,
@@ -81,14 +96,15 @@ export default function main() {
             {
                 headers: {
                     'content-type': 'application/x-www-form-urlencoded',
-                    origin: 'http://www.load-test.ru:1080',
+                    origin: `${HOST}`,
                     'upgrade-insecure-requests': '1',
                 },
             }
         )
 
+        // Make Payment
         response = http.post(
-            'http://www.load-test.ru:1080/cgi-bin/reservations.pl',
+            `${HOST}/cgi-bin/reservations.pl`,
             {
                 firstName: '',
                 lastName: '',
@@ -101,7 +117,7 @@ export default function main() {
                 numPassengers: `${vars['numPassengers1']}`,
                 seatType: `${vars['seatType1']}`,
                 seatPref: `${vars['seatPref1']}`,
-                outboundFlight: '131;290;02/06/2022',
+                outboundFlight: outboundFlight,
                 advanceDiscount: `${vars['advanceDiscount1']}`,
                 returnFlight: '',
                 JSFormSubmit: 'off',
@@ -112,19 +128,14 @@ export default function main() {
             {
                 headers: {
                     'content-type': 'application/x-www-form-urlencoded',
-                    origin: 'http://www.load-test.ru:1080',
+                    origin: `${HOST}`,
                     'upgrade-insecure-requests': '1',
                 },
             }
         )
 
-        response = http.get('http://www.load-test.ru:1080/WebTours/header.html', {
-            headers: {
-                'upgrade-insecure-requests': '1',
-            },
-        })
-
-        response = http.get('http://www.load-test.ru:1080/WebTours/home.html', {
+        //Open Home Page
+        response = http.get(`${HOST}/WebTours/home.html`, {
             headers: {
                 'upgrade-insecure-requests': '1',
             },
